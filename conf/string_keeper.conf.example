@@ -1,0 +1,21 @@
+{
+    "http": {
+        "address": ":8080",
+        "cors": {
+            "allow_origins": ["http://*.gogap.cn"],
+            "allow_methods": ["POST"],
+            "allow_headers": ["Origin"],
+            "expose_headers": ["Content-Length"],
+            "allow_cerdentials": false
+        }
+    },
+    "acl": {
+        "ip_acl_enabled": true,
+        "ip_white_list": ["127.0.0.1"],
+        "auth_enabled": true,
+        "basic_auth": {
+            "production/components": "token",
+            "develop/components": "token"
+        }
+    }
+}
