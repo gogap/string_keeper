@@ -1,19 +1,20 @@
 string_keeper
 =============
 
- Sometimes, we sorage some text file at server, like nginx, e.g.: shell script, python and so on,
- but we want it can be replace some `text` will we tell the server, 
- it was usefull for storage shell script and run mutil server, we could pass the `serverName`, `branch`, `commitID` and just what you want to replace with. 
+ Sometimes, we store some text file at server, like nginx, e.g.: shell script, python and so on, then we will do something like:
+ `curl www.gogap.cn/xxx.sh | sh` for install or run something, 
+but we want it can be replaced by some values that we told the server, 
+it was usefull for storage shell script and run mutil server, we could pass the `serverName`, `branch`, `commitID` and just what you want to replace with. 
 
 
-We do this by golang tmplate, the client side post the file and key-values to server, the server will build by golang template and replace the values to the raw text stirng
+We could do this by golang tmplate, the client side post the file name and key-values to server, the server will build by golang template then replace the values to the raw text stirng
 
 
 ### Usage
 
 Do some preper
 
-1. create text file
+**create text file**
 
 create file: `namespace/bucket/dir1/dir2/abc.sh` in public dir
 
@@ -27,7 +28,7 @@ echo hello
 echo {{.hello}}
 ```
 
-2. configure the `conf/string_keeper.conf`
+**configure the `conf/string_keeper.conf`**
 
 ```json
 {
@@ -54,7 +55,7 @@ echo {{.hello}}
 
 > we have ip white list and bucket auth, it was safe for only deply script
 
-3. start `string_keeper`
+**start `string_keeper`**
 
 ```bash
 $ go build
@@ -106,4 +107,50 @@ change the "raw_data" to false, we got this:
 #!/bin/bash
 echo hello
 echo {{.hello}}
+```
+
+
+### Our practice
+
+We are using gitlab-ci for continuous integration, and we have about 20 components project, and these project had same test and deploy shell script, storage the script at string_keeper, and put following bash script in gitlab-ci deploy jobs.
+
+**gitlab-ci deploy job**
+
+```bash
+curl -X POST --basic -u "ci-scripts-development/components:password" -d '{
+    "namespace": "ci-scripts-development",
+    "bucket": "components",
+    "file": "common/build_and_run.sh",
+    "raw_data":false,
+    "envs":{
+           "gopath":"/gopath",
+           "launchboard_path":"/launchboard/components",
+           "package":"git.xxx.com/components/sms",
+           "component_name":"sms",
+           "compose_name":"sms",
+           "brunch":"develop" 
+    }
+}' https://string-keeper.xxx.com | sh
+```
+
+**deploy script**
+
+File:`ci-scripts-development/components/common/build_and_run.sh`
+
+```bash
+#/bin/bash
+cd  {{.gopath}}/src/{{.package}}
+git checkout {{.brunch}}
+
+cd {{.launchboard_path}}/{{.component_name}}
+make
+cd ..
+docker-compose build {{.compose_name}}
+docker-compose stop {{.compose_name}}
+docker-compose rm -f {{.compose_name}}
+docker-compose up -d {{.compose_name}}
+pid=$(docker inspect --format='{{"{{.State.Pid}}"}}' components_{{.compose_name}}_1)
+if [ $pid = "0"  ]; then
+    exit  3
+fi
 ```

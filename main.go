@@ -206,19 +206,19 @@ func GetBucketString(
 
 	if fi, e := os.Stat(stringFile); e != nil {
 		if os.IsNotExist(e) {
-			respErrorf(res, http.StatusInternalServerError, "file '%s' not exist", originalStringFile)
+			respErrorf(res, http.StatusNotFound, "file '%s' not exist", originalStringFile)
 			return
 		} else {
 			respErrorf(res, http.StatusInternalServerError, "get file stat of %s error, err: %s", originalStringFile, e.Error())
 			return
 		}
 	} else if fi.IsDir() {
-		respErrorf(res, http.StatusInternalServerError, "the request file of %s is a dir", originalStringFile)
+		respErrorf(res, http.StatusExpectationFailed, "the request file of %s is a dir", originalStringFile)
 		return
 	}
 
 	if fileData, e := ioutil.ReadFile(stringFile); e != nil {
-		respErrorf(res, http.StatusInternalServerError, "read file of %s error, err: %s", originalStringFile, e.Error())
+		respErrorf(res, http.StatusExpectationFailed, "read file of %s error, err: %s", originalStringFile, e.Error())
 		return
 	} else {
 		if !data.RawData {
