@@ -96,6 +96,44 @@ func AuthCheck(userName, password string) bool {
 	return true
 }
 
+func BucketAccessAuthCheck(user auth.User, namespace, bucket string) (err error) {
+
+	strUser := string(user)
+	correctUserName := strings.Join([]string{namespace, bucket}, "/")
+
+	if strUser == "" {
+		err = fmt.Errorf("no auth info found")
+		return
+	} else if strUser != correctUserName {
+		err = fmt.Errorf("did not have matched account of %s", correctUserName)
+		return
+	}
+
+	return
+}
+
+func IPCheck(remoteIP string) (err error) {
+
+	if keeperConf.ACL.IPWhiteList == nil {
+		err = fmt.Errorf("the ip of %s is not in white list", remoteIP)
+		return
+	}
+
+	isWhiteIP := false
+	for _, ip := range keeperConf.ACL.IPWhiteList {
+		if ip == remoteIP {
+			isWhiteIP = true
+			break
+		}
+	}
+	if !isWhiteIP {
+		err = fmt.Errorf("the ip of %s is not in white list", remoteIP)
+		return
+	}
+
+	return
+}
+
 func GetBucketString(
 	res http.ResponseWriter,
 	req *http.Request,
@@ -103,22 +141,9 @@ func GetBucketString(
 	params martini.Params) {
 
 	if keeperConf.ACL.IPACLEnabled {
-		clientIP, _, _ := net.SplitHostPort(req.RemoteAddr)
-
-		if keeperConf.ACL.IPWhiteList == nil {
-			respErrorf(res, http.StatusForbidden, "the ip of %s is not in white list", clientIP)
-			return
-		}
-
-		isWhiteIP := false
-		for _, ip := range keeperConf.ACL.IPWhiteList {
-			if ip == clientIP {
-				isWhiteIP = true
-				break
-			}
-		}
-		if !isWhiteIP {
-			respErrorf(res, http.StatusForbidden, "the ip of %s is not in white list", clientIP)
+		remoteIP, _, _ := net.SplitHostPort(req.RemoteAddr)
+		if e := IPCheck(remoteIP); e != nil {
+			respErrorf(res, http.StatusForbidden, "%s", e.Error())
 			return
 		}
 	}
@@ -151,14 +176,8 @@ func GetBucketString(
 	}
 
 	if keeperConf.ACL.AuthEnabled {
-		strUser := string(user)
-		correctUserName := strings.Join([]string{data.Namespace, data.Bucket}, "/")
-
-		if strUser == "" {
-			respErrorf(res, http.StatusForbidden, "no auth info found")
-			return
-		} else if strUser != correctUserName {
-			respErrorf(res, http.StatusForbidden, "did not have matched account of %s", correctUserName)
+		if e := BucketAccessAuthCheck(user, data.Namespace, data.Bucket); e != nil {
+			respErrorf(res, http.StatusForbidden, "%s", e.Error())
 			return
 		}
 	}
