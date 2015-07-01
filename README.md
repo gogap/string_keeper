@@ -1,11 +1,14 @@
 string_keeper
 =============
 
+A string render with version control.
+
  Sometimes, we store some text file at server, like nginx, e.g.: shell script, python and so on, then we will do something like:
  `curl www.gogap.cn/xxx.sh | sh` for install or run something, 
 but we want it can be replaced by some values that we told the server, 
 it was usefull for storage shell script and run mutil server, we could pass the `serverName`, `branch`, `commitID` and just what you want to replace with. 
 
+And also we need support version control for string, you cloud tell string keeper which `revision` you want to render, you just need to pass branch name or commit id to `revision` field.
 
 We could do this by golang tmplate, the client side post the file name and key-values to server, the server will build by golang template then replace the values to the raw text stirng
 
@@ -69,6 +72,7 @@ The post data like following:
 {
     "namespace": "namespace",
     "bucket": "bucket",
+    "revision": "",
     "file": "dir1/dir2/abc.sh",
     "envs": {
         "hello": "world"
@@ -80,6 +84,8 @@ The post data like following:
 `envs` is an `key-value` style, the key is in the template file like `{{.hello}}`, and it will use go template and replace the `world` with it.
 
 if `raw_data` is true, we will get the raw template, not replaced with envs values.
+
+if `dir1` is git dir, then you could input `revision` info to pick file with any version, e.g.: `master` `develop` `HEAD` or `commit id`
 
 Take a look with `curl`
 
@@ -120,6 +126,7 @@ We are using gitlab-ci for continuous integration, and we have about 20 componen
 curl -X POST --basic -u "ci-scripts-development/components:password" -d '{
     "namespace": "ci-scripts-development",
     "bucket": "components",
+    "revision": "develop",
     "file": "common/build_and_run.sh",
     "raw_data":false,
     "envs":{
