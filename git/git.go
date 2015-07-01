@@ -15,7 +15,7 @@ func NewGit(repoPath string) *Git {
 }
 
 func (p *Git) Pull() (data []byte, err error) {
-	return p.run("-C", p.repoPath, "pull", p.repoPath)
+	return p.run("-C", p.repoPath, "pull")
 }
 
 func (p *Git) CatBlobFile(filePath, revision string) (data []byte, err error) {

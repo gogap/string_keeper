@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-martini/martini"
 	"github.com/gogap/env_strings"
@@ -27,6 +29,8 @@ var (
 	gitDirList map[string]bool = make(map[string]bool)
 
 	revisionFileCache map[string][]byte = make(map[string][]byte)
+
+	synclocker sync.Mutex
 )
 
 func main() {
@@ -253,11 +257,16 @@ func GetBucketString(
 				readfileDirect = false
 			} else if !exist {
 				if fi, e := os.Stat(filepath.Join(gitFileRoot, ".git")); e != nil {
+					synclocker.Lock()
 					gitDirList[gitFileRoot] = false
 					badRequest = true
+					synclocker.Unlock()
 				} else if fi.IsDir() {
+					synclocker.Lock()
 					gitDirList[gitFileRoot] = true
 					readfileDirect = false
+					go gitPuller(gitFileRoot)
+					synclocker.Unlock()
 				} else {
 					badRequest = true
 				}
@@ -332,6 +341,14 @@ func getFileGitRoot(bucketDir string, fileDir string) (repoGitRoot string, err e
 	repoGitRoot = filepath.Join(bucketDir, dirs[0])
 
 	return
+}
+
+func gitPuller(gitRoot string) {
+	repo := git.NewGit(gitRoot)
+	for {
+		repo.Pull()
+		time.Sleep(time.Second * 30)
+	}
 }
 
 func respErrorf(res http.ResponseWriter, code int, format string, v ...interface{}) (int, error) {
