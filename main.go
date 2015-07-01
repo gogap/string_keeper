@@ -14,11 +14,19 @@ import (
 	"github.com/gogap/env_strings"
 	"github.com/martini-contrib/auth"
 	"github.com/martini-contrib/cors"
+
+	"github.com/gogap/string_keeper/git"
 )
 
 var (
 	resDir     string
 	keeperConf StringKeeperConfig
+)
+
+var (
+	gitDirList map[string]bool = make(map[string]bool)
+
+	revisionFileCache map[string][]byte = make(map[string][]byte)
 )
 
 func main() {
@@ -78,13 +86,13 @@ func main() {
 type PostData struct {
 	Namespace string                 `json:"namespace"`
 	Bucket    string                 `json:"bucket"`
+	Revision  string                 `json:"revision,omitempty"`
 	File      string                 `json:"file"`
 	Envs      map[string]interface{} `json:"envs"`
 	RawData   bool                   `json:"raw_data"`
 }
 
 func AuthCheck(userName, password string) bool {
-	fmt.Printf("format")
 	if keeperConf.ACL.AuthEnabled {
 		if keeperConf.ACL.BasicAuth != nil {
 			if pwd, exist := keeperConf.ACL.BasicAuth[userName]; exist && pwd == password {
@@ -182,7 +190,8 @@ func GetBucketString(
 		}
 	}
 
-	originalStringFile := filepath.Join("public", data.Namespace, data.Bucket, data.File)
+	bucketRoot := filepath.Join("public", data.Namespace, data.Bucket)
+	originalStringFile := filepath.Join(bucketRoot, data.File)
 	stringFile := originalStringFile
 
 	if strings.Contains(stringFile, "..") || strings.Contains(stringFile, "./") {
@@ -195,13 +204,11 @@ func GetBucketString(
 			respErrorf(res, http.StatusInternalServerError, "get file of %s's abs path failed, err: %s", stringFile, e.Error())
 			return
 		} else {
-			stringFile = absPath
+			if !filepath.HasPrefix(absPath, resDir) {
+				res.WriteHeader(http.StatusBadRequest)
+				return
+			}
 		}
-	}
-
-	if !filepath.HasPrefix(stringFile, resDir) {
-		res.WriteHeader(http.StatusBadRequest)
-		return
 	}
 
 	if fi, e := os.Stat(stringFile); e != nil {
@@ -217,23 +224,114 @@ func GetBucketString(
 		return
 	}
 
-	if fileData, e := ioutil.ReadFile(stringFile); e != nil {
-		respErrorf(res, http.StatusExpectationFailed, "read file of %s error, err: %s", originalStringFile, e.Error())
-		return
+	fileDir := filepath.Dir(stringFile)
+
+	readfileDirect := false
+	badRequest := false
+	gitFileRoot := ""
+	gitFilePath := ""
+
+	var err error
+
+	if data.Revision == "" {
+		readfileDirect = true
 	} else {
-		if !data.RawData {
-			if retStr, e := env_strings.ExecuteWith(string(fileData), data.Envs); e != nil {
-				respErrorf(res, http.StatusInternalServerError, "build file of %s error, err: %s", originalStringFile, e.Error())
-				return
-			} else {
-				respString(res, retStr)
+
+		if fileDir == bucketRoot {
+			readfileDirect = true
+			badRequest = true
+		} else {
+
+			if gitFileRoot, err = getFileGitRoot(bucketRoot, fileDir); err != nil {
+				respErrorf(res, http.StatusExpectationFailed, "get file of %s git repo root error, err: %s", originalStringFile, err.Error())
 				return
 			}
-		} else {
-			respBytes(res, fileData)
+
+			gitFilePath, _ = filepath.Rel(gitFileRoot, stringFile)
+
+			if isGit, exist := gitDirList[gitFileRoot]; exist && isGit {
+				readfileDirect = false
+			} else if !exist {
+				if fi, e := os.Stat(filepath.Join(gitFileRoot, ".git")); e != nil {
+					gitDirList[gitFileRoot] = false
+					badRequest = true
+				} else if fi.IsDir() {
+					gitDirList[gitFileRoot] = true
+					readfileDirect = false
+				} else {
+					badRequest = true
+				}
+			} else {
+				readfileDirect = true
+			}
+		}
+	}
+
+	if badRequest {
+		respErrorf(res, http.StatusBadRequest, "read file of %s error, err: the file is not in git dir, could not use revision to pick file", originalStringFile)
+		return
+	}
+
+	var fileData []byte
+
+	if readfileDirect {
+		if fileData, err = ioutil.ReadFile(stringFile); err != nil {
+			respErrorf(res, http.StatusExpectationFailed, "read file of %s error, err: %s", originalStringFile, err.Error())
+			return
+		}
+	} else {
+
+		if fileData, err = GetRevisionFile(gitFileRoot, gitFilePath, data.Revision); err != nil {
+			respErrorf(res, http.StatusExpectationFailed, "read file of %s error, revision: %s, err: %s", originalStringFile, data.Revision, err.Error())
 			return
 		}
 	}
+
+	if !data.RawData {
+		if retStr, e := env_strings.ExecuteWith(string(fileData), data.Envs); e != nil {
+			respErrorf(res, http.StatusInternalServerError, "build file of %s error, err: %s", originalStringFile, e.Error())
+			return
+		} else {
+			respString(res, retStr)
+			return
+		}
+	} else {
+		respBytes(res, fileData)
+		return
+	}
+}
+
+func GetRevisionFile(baseDir, filePath, revision string) (data []byte, err error) {
+	revisionPath := revision + ":" + filePath
+
+	exist := false
+	if data, exist = revisionFileCache[revisionPath]; exist {
+		return
+	}
+
+	repoGit := git.NewGit(baseDir)
+
+	if data, err = repoGit.CatBlobFile(filePath, revision); err != nil {
+		err = fmt.Errorf("%s", string(data))
+		return
+	}
+
+	revisionFileCache[revisionPath] = data
+
+	return
+}
+
+func getFileGitRoot(bucketDir string, fileDir string) (repoGitRoot string, err error) {
+	relPath := ""
+	if relPath, err = filepath.Rel(bucketDir, fileDir); err != nil {
+		return
+	}
+
+	dirs := strings.Split(relPath, "/")
+
+	repoGitRoot = filepath.Join(bucketDir, dirs[0])
+
+	return
 }
 
 func respErrorf(res http.ResponseWriter, code int, format string, v ...interface{}) (int, error) {
