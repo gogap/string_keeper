@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -345,7 +346,11 @@ func getFileGitRoot(bucketDir string, fileDir string) (repoGitRoot string, err e
 func gitPuller(gitRoot string) {
 	repo := git.NewGit(gitRoot)
 	for {
-		repo.Pull()
+		if output, e := repo.Pull(); e != nil {
+			log.Fatalf("[%s]:%s, error: %s\n", gitRoot, string(output), e.Error())
+		} else {
+			log.Fatalf("[%s]:%s\n", gitRoot, string(output))
+		}
 		time.Sleep(time.Second * 30)
 	}
 }
