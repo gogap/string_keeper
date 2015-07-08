@@ -347,9 +347,9 @@ func gitPuller(gitRoot string) {
 	repo := git.NewGit(gitRoot)
 	for {
 		if output, e := repo.Pull(); e != nil {
-			log.Fatalf("[%s]:%s, error: %s\n", gitRoot, string(output), e.Error())
+			log.Printf("[%s]:%s, error: %s\n", gitRoot, string(output), e.Error())
 		} else {
-			log.Fatalf("[%s]:%s\n", gitRoot, string(output))
+			log.Printf("[%s]:%s\n", gitRoot, string(output))
 		}
 		time.Sleep(time.Second * 30)
 	}
