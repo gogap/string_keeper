@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -289,9 +290,8 @@ func GetBucketString(
 			return
 		}
 	} else {
-
 		if fileData, err = GetRevisionFile(gitFileRoot, gitFilePath, data.Revision); err != nil {
-			respErrorf(res, http.StatusExpectationFailed, "read file of %s error, revision: %s, err: %s", originalStringFile, data.Revision, err.Error())
+			respErrorf(res, http.StatusExpectationFailed, "read file of %s error, git root: %s, revision: %s , err: %s", gitFilePath, gitFileRoot, data.Revision, err.Error())
 			return
 		}
 	}
@@ -321,7 +321,7 @@ func GetRevisionFile(baseDir, filePath, revision string) (data []byte, err error
 	repoGit := git.NewGit(baseDir)
 
 	if data, err = repoGit.CatBlobFile(filePath, revision); err != nil {
-		err = fmt.Errorf("%s", string(data))
+		err = fmt.Errorf("%s\n%s", string(data), err.Error())
 		return
 	}
 
@@ -346,7 +346,11 @@ func getFileGitRoot(bucketDir string, fileDir string) (repoGitRoot string, err e
 func gitPuller(gitRoot string) {
 	repo := git.NewGit(gitRoot)
 	for {
-		repo.Pull()
+		if output, e := repo.Pull(); e != nil {
+			log.Fatalf("[%s]:%s, error: %s\n", gitRoot, string(output), e.Error())
+		} else {
+			log.Fatalf("[%s]:%s\n", gitRoot, string(output))
+		}
 		time.Sleep(time.Second * 30)
 	}
 }
